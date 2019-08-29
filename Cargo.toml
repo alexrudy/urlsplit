@@ -1,5 +1,5 @@
 [package]
-name = "xsvurl"
+name = "urlsplit"
 version = "0.1.0"
 authors = ["Alex Rudy <alex.rudy@bit.ly>"]
 edition = "2018"
@@ -9,3 +9,8 @@ edition = "2018"
 [dependencies]
 url = "1"
 csv = "1.1"
+lazy_static = "1"
+tldextract = "*"
+docopt = "1"
+serde_derive = "1"
+serde = "1"

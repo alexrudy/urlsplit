@@ -1,50 +1,122 @@
 use csv;
-use std::error::Error;
-use std::io;
+use docopt;
+use docopt::Docopt;
+use serde_derive::Deserialize;
+use std::error;
+use std::fs;
+use std::io::{self, BufRead, BufReader};
+use std::path::PathBuf;
 use std::process;
-use url::Url;
+
+mod delimiter;
+mod split;
+
+use delimiter::Delimiter;
+use split::OptionDeref;
+
+static USAGE: &'static str = "
+Accepts a newline separated list of URLs and emits a CSV of URLs split into their component parts.
+
+When no input is provided, or input is \"-\", inputs will be read from stdin.
+
+Usage:
+    urlsplit [options] [<input>]
+    urlsplit --help
+
+Common options:
+    -h, --help             Display this message
+    -o, --output <file>    Write output to <file> instead of stdout.
+    -n, --no-headers       When set, the first row emitted will not be contain
+                           headers.
+    -d, --delimiter <arg>  The field delimiter for writing CSV data.
+                           Must be a single character. (default: ,)
+
+";
+
+type Error = Box<dyn error::Error + 'static>;
+
+#[derive(Deserialize)]
+struct Args {
+    arg_input: Option<String>,
+    flag_no_headers: bool,
+    flag_output: Option<String>,
+    flag_delimiter: Option<Delimiter>,
+}
+
+impl Args {
+    fn get_input(&self) -> Option<PathBuf> {
+        match self.arg_input.as_deref() {
+            Some("-") => None,
+            Some(s) => Some(PathBuf::from(s)),
+            None => None,
+        }
+    }
+
+    fn get_output(&self) -> Option<PathBuf> {
+        match self.flag_output.as_deref() {
+            Some("-") => None,
+            Some(s) => Some(PathBuf::from(s)),
+            None => None,
+        }
+    }
+
+    fn get_headers(&self) -> bool {
+        !self.flag_no_headers
+    }
+
+    fn get_delimiter(&self) -> Option<u8> {
+        self.flag_delimiter.map(|d| d.0)
+    }
+}
+
+fn reader(input: Option<PathBuf>) -> io::Result<Box<dyn io::BufRead + 'static>> {
+    Ok(match input {
+        None => Box::new(BufReader::new(io::stdin())),
+        Some(ref p) => match fs::File::open(p) {
+            Ok(x) => Box::new(BufReader::new(x)),
+            Err(err) => {
+                let msg = format!("failed to open {}: {}", p.display(), err);
+                return Err(io::Error::new(io::ErrorKind::NotFound, msg));
+            }
+        },
+    })
+}
+
+fn writer(output: Option<PathBuf>) -> io::Result<Box<dyn io::Write + 'static>> {
+    Ok(match output {
+        None => Box::new(io::stdout()),
+        Some(ref p) => Box::new(fs::File::create(p)?),
+    })
+}
+
+fn run() -> Result<(), Error> {
+    let args: Args = Docopt::new(USAGE)?.parse()?.deserialize()?;
+
+    let mut rdr = reader(args.get_input())?;
+
+    let iowriter = writer(args.get_output())?;
+    let mut writer = match args.get_delimiter() {
+        Some(d) => csv::WriterBuilder::new().delimiter(d).from_writer(iowriter),
+        None => csv::Writer::from_writer(iowriter),
+    };
+
+    if args.get_headers() {
+        writer.write_record(&split::header_record())?;
+
+        let mut buf = String::new();
+        rdr.read_line(&mut buf)?;
+    }
+
+    for line in rdr.lines() {
+        let record = split::parse_url(&line?.trim_matches('"'));
+        writer.write_record(&record)?;
+    }
+    Ok(())
+}
 
 fn main() {
-    if let Err(err) = split_urls() {
+    if let Err(err) = run() {
         println!("error parsing URLs: {}", err);
         process::exit(1);
     };
-}
-
-fn empty_row(index: &str) -> Result<csv::ByteRecord, Box<dyn Error>> {
-    let values = vec![index, "", "", "", "", "", ""];
-    Ok(csv::ByteRecord::from(values))
-}
-
-fn url_row(index: &str, url: Url) -> Result<csv::ByteRecord, Box<dyn Error>> {
-    let mut values = Vec::with_capacity(7);
-
-    values.push(index);
-    values.push(url.scheme());
-    values.push(url.host_str().unwrap_or(""));
-    values.push(url.path());
-    values.push(url.query().unwrap_or(""));
-    values.push(url.fragment().unwrap_or(""));
-    values.push(url.domain().unwrap_or(""));
-
-    Ok(csv::ByteRecord::from(values))
-}
-
-fn split_urls() -> Result<(), Box<dyn Error>> {
-    let mut rdr = csv::Reader::from_reader(io::stdin());
-    let mut row = csv::StringRecord::new();
-
-    let mut writer = csv::Writer::from_writer(io::stdout());
-
-    while rdr.read_record(&mut row)? {
-        let idx = row.get(0).expect("Must have an index!");
-        if let Some(url) = row.get(1) {
-            let output_row = match Url::parse(url) {
-                Ok(url) => url_row(idx, url)?,
-                Err(_) => empty_row(idx)?,
-            };
-            writer.write_record(&output_row)?;
-        }
-    }
-    Ok(())
 }
