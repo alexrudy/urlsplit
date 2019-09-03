@@ -67,12 +67,12 @@ pub fn header_record() -> csv::StringRecord {
     ])
 }
 
-fn urlsplit_tld(url: &str, values: &mut Vec<String>) -> Result<(), url::ParseError> {
+fn urlsplit_tld(url: &str, values: &mut csv::StringRecord) -> Result<(), url::ParseError> {
     match EXTRACTOR.extract(&url) {
         Ok(tld) => {
-            values.push(tld.domain.as_deref().unwrap_or("").to_string());
-            values.push(tld.subdomain.as_deref().unwrap_or("").to_string());
-            values.push(tld.suffix.as_deref().unwrap_or("").to_string());
+            values.push_field(tld.domain.as_deref().unwrap_or(""));
+            values.push_field(tld.subdomain.as_deref().unwrap_or(""));
+            values.push_field(tld.suffix.as_deref().unwrap_or(""));
 
             let registration = if tld.suffix.is_some() {
                 format!(
@@ -84,38 +84,39 @@ fn urlsplit_tld(url: &str, values: &mut Vec<String>) -> Result<(), url::ParseErr
                 tld.domain.as_deref().unwrap_or("").to_string()
             };
 
-            values.push(registration);
-            values.push("".into())
+            values.push_field(&registration);
+            values.push_field("");
         }
         Err(err) => {
-            values.push("".into());
-            values.push("".into());
-            values.push("".into());
-            values.push("".into());
-            values.push(err.to_string())
+            values.push_field("");
+            values.push_field("");
+            values.push_field("");
+            values.push_field("");
+            values.push_field(&err.to_string());
         }
     }
     Ok(())
 }
 
-fn p(p: Option<&str>) -> String {
-    p.unwrap_or("").to_string()
-}
-
 // URL Parsing, which will exit early if there is an
 // error, because if the parsing fails, then we almost
 // certianly don't want to attempt the TLD extractor.
-fn urlsplit_parse(url: &str, values: &mut Vec<String>) -> Result<(), url::ParseError> {
+fn urlsplit_parse(url: &str, values: &mut csv::StringRecord) -> Result<(), url::ParseError> {
     let parts = Url::parse(url)?;
-    values.push(parts.scheme().to_string());
-    values.push(p(parts.host_str()));
-    values.push(parts.path().to_string());
-    values.push(p(parts.query()));
-    values.push(p(parts.fragment()));
-    values.push(parts.username().to_string());
-    values.push(p(parts.password()));
-    values.push(parts.domain().unwrap_or("").to_string());
-    values.push(parts.port().map(|p| format!("{}", p)).unwrap_or("".to_string()));
+    values.push_field(parts.scheme());
+    values.push_field(parts.host_str().unwrap_or(""));
+    values.push_field(parts.path());
+    values.push_field(parts.query().unwrap_or(""));
+    values.push_field(parts.fragment().unwrap_or(""));
+    values.push_field(parts.username());
+    values.push_field(parts.password().unwrap_or(""));
+    values.push_field(parts.domain().unwrap_or(""));
+    values.push_field(
+        &parts
+            .port()
+            .map(|p| format!("{}", p))
+            .unwrap_or_else(|| "".to_string()),
+    );
 
     Ok(())
 }
@@ -123,11 +124,12 @@ fn urlsplit_parse(url: &str, values: &mut Vec<String>) -> Result<(), url::ParseE
 // Make a url record from a URL string, using both TLDextract and
 // url parsing.
 fn urlsplit_record(url: &str) -> Result<csv::StringRecord, url::ParseError> {
-    let mut values: Vec<String> = Vec::with_capacity(12);
-    values.push(url.to_string());
-    urlsplit_parse(url, &mut values)?;
-    urlsplit_tld(url, &mut values)?;
-    Ok(csv::StringRecord::from(values))
+    let mut record = csv::StringRecord::with_capacity(255, 12);
+    record.push_field(url);
+    urlsplit_parse(url, &mut record)?;
+    urlsplit_tld(url, &mut record)?;
+
+    Ok(record)
 }
 
 #[cfg(test)]
@@ -138,7 +140,7 @@ mod test {
 
     #[derive(Debug)]
     struct TestError {
-        message: String
+        message: String,
     }
 
     impl fmt::Display for TestError {
@@ -151,19 +153,25 @@ mod test {
 
     #[test]
     fn test_urlsplit_columns() {
+        let err = Box::new(TestError {
+            message: "Error".into(),
+        });
 
-        let err = Box::new(TestError { message: "Error".into() });
-
-        assert_eq!(error_record("http://example.com", err).expect("Valid error record").len(), COLUMNS + 2);
+        assert_eq!(
+            error_record("http://example.com", err)
+                .expect("Valid error record")
+                .len(),
+            COLUMNS + 2
+        );
         assert_eq!(header_record().len(), COLUMNS + 2);
     }
 
-    fn v<F, E>(urlfunc: F, url: &str) -> Result<Vec<String>, E>
+    fn v<F, E>(urlfunc: F, url: &str) -> Result<csv::StringRecord, E>
     where
-        F: Fn(&str, &mut Vec<String>) -> Result<(), E>,
+        F: Fn(&str, &mut csv::StringRecord) -> Result<(), E>,
         E: cmp::PartialEq,
     {
-        let mut values = Vec::new();
+        let mut values = csv::StringRecord::new();
         match urlfunc(url, &mut values) {
             Ok(()) => Ok(values),
             Err(e) => Err(e),
@@ -176,37 +184,30 @@ mod test {
             v(urlsplit_parse, "foo"),
             Err(url::ParseError::RelativeUrlWithoutBase)
         );
+        let rec = v(urlsplit_parse, "https://foo").expect("Non-error record");
         assert_eq!(
-            v(urlsplit_parse, "https://foo"),
-            Ok(vec![
-                "https".into(),
-                "foo".into(),
-                "/".into(),
-                "".into(),
-                "".into(),
-                "".into(),
-                "".into(),
-                "foo".into(),
-                "".into()
-            ])
+            rec.iter().collect::<Vec<_>>(),
+            vec!["https", "foo", "/", "", "", "", "", "foo", "",]
         );
 
+        let rec = v(
+            urlsplit_parse,
+            "https://username:password@my.example.com:1234/path/to/resource?query=hello#fragment",
+        )
+        .expect("Non-error record");
         assert_eq!(
-            v(
-                urlsplit_parse,
-                "https://username:password@my.example.com:1234/path/to/resource?query=hello#fragment"
-            ),
-            Ok(vec![
-                "https".into(),
-                "my.example.com".into(),
-                "/path/to/resource".into(),
-                "query=hello".into(),
-                "fragment".into(),
-                "username".into(),
-                "password".into(),
-                "my.example.com".into(),
-                "1234".into(),
-            ])
+            rec.iter().collect::<Vec<_>>(),
+            vec![
+                "https",
+                "my.example.com",
+                "/path/to/resource",
+                "query=hello",
+                "fragment",
+                "username",
+                "password",
+                "my.example.com",
+                "1234",
+            ]
         );
     }
 
