@@ -34,9 +34,15 @@ lazy_static! {
     };
 }
 
+static COLUMNS: usize = 13;
+
 // Produce an error record, showing only the error message.
 fn error_record<E: error::Error>(url: &str, error: E) -> Result<csv::StringRecord, E> {
-    let mut record = csv::StringRecord::from(vec![url, "", "", "", "", "", "", "", "", "", ""]);
+    let mut parts = vec![url];
+    for _ in 0..COLUMNS {
+        parts.push("");
+    }
+    let mut record = csv::StringRecord::from(parts);
     record.push_field(&error.to_string());
     Ok(record)
 }
@@ -45,11 +51,14 @@ pub fn header_record() -> csv::StringRecord {
     csv::StringRecord::from(vec![
         "url",
         "scheme",
-        "host",
+        "netloc",
         "path",
         "query",
         "fragment",
+        "username",
+        "password",
         "hostname",
+        "port",
         "domain",
         "subdomain",
         "suffix",
@@ -89,17 +98,24 @@ fn urlsplit_tld(url: &str, values: &mut Vec<String>) -> Result<(), url::ParseErr
     Ok(())
 }
 
+fn p(p: Option<&str>) -> String {
+    p.unwrap_or("").to_string()
+}
+
 // URL Parsing, which will exit early if there is an
 // error, because if the parsing fails, then we almost
 // certianly don't want to attempt the TLD extractor.
 fn urlsplit_parse(url: &str, values: &mut Vec<String>) -> Result<(), url::ParseError> {
     let parts = Url::parse(url)?;
     values.push(parts.scheme().to_string());
-    values.push(parts.host_str().unwrap_or("").to_string());
+    values.push(p(parts.host_str()));
     values.push(parts.path().to_string());
-    values.push(parts.query().unwrap_or("").to_string());
-    values.push(parts.fragment().unwrap_or("").to_string());
+    values.push(p(parts.query()));
+    values.push(p(parts.fragment()));
+    values.push(parts.username().to_string());
+    values.push(p(parts.password()));
     values.push(parts.domain().unwrap_or("").to_string());
+    values.push(parts.port().map(|p| format!("{}", p)).unwrap_or("".to_string()));
 
     Ok(())
 }
@@ -118,6 +134,29 @@ fn urlsplit_record(url: &str) -> Result<csv::StringRecord, url::ParseError> {
 mod test {
     use super::*;
     use std::cmp;
+    use std::fmt;
+
+    #[derive(Debug)]
+    struct TestError {
+        message: String
+    }
+
+    impl fmt::Display for TestError {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "TestError: {}", self.message)
+        }
+    }
+
+    impl error::Error for TestError {}
+
+    #[test]
+    fn test_urlsplit_columns() {
+
+        let err = Box::new(TestError { message: "Error".into() });
+
+        assert_eq!(error_record("http://example.com", err).expect("Valid error record").len(), COLUMNS + 2);
+        assert_eq!(header_record().len(), COLUMNS + 2);
+    }
 
     fn v<F, E>(urlfunc: F, url: &str) -> Result<Vec<String>, E>
     where
@@ -145,14 +184,17 @@ mod test {
                 "/".into(),
                 "".into(),
                 "".into(),
-                "foo".into()
+                "".into(),
+                "".into(),
+                "foo".into(),
+                "".into()
             ])
         );
 
         assert_eq!(
             v(
                 urlsplit_parse,
-                "https://my.example.com/path/to/resource?query=hello#fragment"
+                "https://username:password@my.example.com:1234/path/to/resource?query=hello#fragment"
             ),
             Ok(vec![
                 "https".into(),
@@ -160,7 +202,10 @@ mod test {
                 "/path/to/resource".into(),
                 "query=hello".into(),
                 "fragment".into(),
-                "my.example.com".into()
+                "username".into(),
+                "password".into(),
+                "my.example.com".into(),
+                "1234".into(),
             ])
         );
     }
