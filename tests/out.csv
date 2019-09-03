@@ -1,0 +1,3 @@
+url,scheme,host,path,query,fragment,hostname,domain,subdomain,suffix,registration,error
+https://user:password@subdomain.domain.suffix:100/path/to/resource?query=arguments#fragment,https,subdomain.domain.suffix,/path/to/resource,query=arguments,fragment,subdomain.domain.suffix,suffix,domain.subdomain,,suffix,
+https://simple.example.com,https,simple.example.com,/,,,simple.example.com,example,simple,com,example.com,
