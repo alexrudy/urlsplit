@@ -9,6 +9,7 @@ fn test_command() {
 
     let output = process::Command::new(workdir.join("urlsplit"))
         .arg(thisdir.join("tests").join("in.csv"))
+        .arg("-q")
         .output()
         .expect("Failed to execute urlsplit");
     let expected = include_str!("out.csv");

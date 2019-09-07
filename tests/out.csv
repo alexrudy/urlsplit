@@ -1,3 +1,6 @@
 url,scheme,netloc,path,query,fragment,username,password,hostname,port,domain,subdomain,suffix,registration,error
 https://user:password@subdomain.domain.suffix:100/path/to/resource?query=arguments#fragment,https,subdomain.domain.suffix,/path/to/resource,query=arguments,fragment,user,password,subdomain.domain.suffix,100,suffix,domain.subdomain,,suffix,
 https://simple.example.com,https,simple.example.com,/,,,,,simple.example.com,,example,simple,com,example.com,
+not-a-url,,,,,,,,,,,,,,relative URL without a base
+https://192.168.0.1/admin.html,https,192.168.0.1,/admin.html,,,,,,,192.168.0.1,,,192.168.0.1,
+"data:text/plain,Hello?World#",data,,"text/plain,Hello",World,,,,,,,,,,"no such host: 'data:text/plain,Hello?World#'"

@@ -55,7 +55,7 @@ Common options:
                            headers, and the input is assumed to not contain headers.
     -d, --delimiter <arg>  The field delimiter for writing CSV data.
                            Must be a single character. (default: ,)
-    -q, --quote             When set, enables CSV-style quoting when reading in URLs.
+    -q, --quote            When set, enables CSV-style quoting when reading in URLs.
 
 ";
 

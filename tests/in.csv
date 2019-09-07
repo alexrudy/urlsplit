@@ -1,3 +1,6 @@
 URL
 https://user:password@subdomain.domain.suffix:100/path/to/resource?query=arguments#fragment
 https://simple.example.com
+not-a-url
+https://192.168.0.1/admin.html
+"data:text/plain,Hello?World#"
