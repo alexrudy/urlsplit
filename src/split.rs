@@ -98,19 +98,39 @@ fn urlsplit_tld(url: &str, values: &mut csv::StringRecord) -> Result<(), url::Pa
     Ok(())
 }
 
+fn construct_netloc(parts: &Url) -> String {
+    let mut netloc = String::new();
+    netloc.push_str( parts.username());
+    if let Some(password) = parts.password() {
+        netloc.push_str(":");
+        netloc.push_str(password);
+    }
+    if !netloc.is_empty() {
+        netloc.push_str("@")
+    }
+    netloc.push_str(parts.host_str().unwrap_or(""));
+
+    if let Some(port) = parts.port() {
+        netloc.push_str(":");
+        netloc.push_str(&format!("{}", port))
+    }
+
+    netloc
+}
+
 // URL Parsing, which will exit early if there is an
 // error, because if the parsing fails, then we almost
 // certianly don't want to attempt the TLD extractor.
 fn urlsplit_parse(url: &str, values: &mut csv::StringRecord) -> Result<(), url::ParseError> {
     let parts = Url::parse(url)?;
     values.push_field(parts.scheme());
-    values.push_field(parts.host_str().unwrap_or(""));
+    values.push_field(&construct_netloc(&parts));
     values.push_field(parts.path());
     values.push_field(parts.query().unwrap_or(""));
     values.push_field(parts.fragment().unwrap_or(""));
     values.push_field(parts.username());
     values.push_field(parts.password().unwrap_or(""));
-    values.push_field(parts.domain().unwrap_or(""));
+    values.push_field(parts.host_str().unwrap_or(""));
     values.push_field(
         &parts
             .port()
@@ -199,7 +219,7 @@ mod test {
             rec.iter().collect::<Vec<_>>(),
             vec![
                 "https",
-                "my.example.com",
+                "username:password@my.example.com:1234",
                 "/path/to/resource",
                 "query=hello",
                 "fragment",
