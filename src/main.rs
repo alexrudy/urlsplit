@@ -15,7 +15,6 @@ mod delimiter;
 mod split;
 
 use delimiter::Delimiter;
-use split::OptionDeref;
 
 static USAGE: &str = "
 Accepts a newline separated list of URLs and emits a CSV of component parts.
@@ -198,5 +197,4 @@ mod test {
             Some("Hello".into())
         );
     }
-
 }
